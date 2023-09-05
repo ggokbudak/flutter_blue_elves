@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'dart:io';
+import 'package:geolocator/geolocator.dart';
 
 ///中央处理类,用于扫描设备以及与底层通信
 class FlutterBlueElves {
@@ -73,6 +74,19 @@ class FlutterBlueElves {
     _channel.invokeMethod('applyBluetoothPermission');
   }
 
+  Future<Position?> _getCurrentLocation() async {
+    try {
+      Position? _currentPosition = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      return _currentPosition;
+    } catch (e) {
+      print("Error getting location: $e");
+      return null;
+    }
+  }
+
   ///调用底层去获取定位权限,安卓专用
   void androidApplyLocationPermission(Function(bool isOk) callback) {
     _androidApplyLocationPermissionCallback = callback;
@@ -122,7 +136,7 @@ class FlutterBlueElves {
     });
   }
 
-  void _onToDart(dynamic message) {
+  void _onToDart(dynamic message) async {
     //底层发送成功消息时会进入到这个函数来接收
     //print(message);
     switch (message['eventName']) {
@@ -151,17 +165,30 @@ class FlutterBlueElves {
         _androidOpenBluetoothServiceCallback(false);
         break;
       case "scanResult":
-        ScanResult item = ScanResult._(
-            message['id'],
-            message['name'],
-            message['localName'],
-            message['macAddress'],
-            message['rssi'],
-            message['uuids'],
-            message['manufacturerSpecificData'],
-            message['scanRecord']);
-        _scanResultStreamController.add(item); //将扫描到的新设备放到流中通知
+        {
+          Position? currentLocation = await _getCurrentLocation();
+          ScanResult item = ScanResult._(
+              message['id'],
+              message['name'],
+              message['localName'],
+              message['macAddress'],
+              message['rssi'],
+              message['uuids'],
+              message['manufacturerSpecificData'],
+              message['scanRecord'],
+              DateTime.now(),
+              currentLocation,
+              message['battery'],
+              message['hasSentDatas']);
+
+          item.lastSeen = DateTime.now();
+          item.location = currentLocation;
+          item.hasSentDatas = false;
+
+          _scanResultStreamController.add(item);
+        }
         break;
+
       case "scanTimeout":
         _scanResultStreamController.close(); //扫描时间到了就关闭流,因为是单对单的流
         break;
@@ -592,6 +619,8 @@ class ScanResult {
   ///设备localName
   late final String? _localName;
 
+  late DateTime? _lastSeen;
+
   ///mac地址,ios没有返回
   late final String? _macAddress;
 
@@ -607,8 +636,41 @@ class ScanResult {
   ///原始广播包数据
   late final Uint8List? _row;
 
-  ScanResult._(this._id, this._name, this._localName, this._macAddress,
-      this._rssi, this._uuids, this._manufacturerSpecificData, this._row);
+  late Position? _currentPosition;
+
+  late double? _battery;
+
+  late bool? _hasSentDatas;
+
+  ScanResult._(
+      this._id,
+      this._name,
+      this._localName,
+      this._macAddress,
+      this._rssi,
+      this._uuids,
+      this._manufacturerSpecificData,
+      this._row,
+      this._lastSeen,
+      this._currentPosition,
+      this._battery,
+      this._hasSentDatas);
+
+  set lastSeen(DateTime lastSeen) {
+    _lastSeen = lastSeen;
+  }
+
+  set location(Position? location) {
+    _currentPosition = location;
+  }
+
+  set battery(double? battery) {
+    _battery = battery;
+  }
+
+  set hasSentDatas(bool? hasSentDatas) {
+    _hasSentDatas = hasSentDatas;
+  }
 
   Uint8List? get row => _row;
 
@@ -622,9 +684,17 @@ class ScanResult {
 
   String? get macAddress => _macAddress;
 
+  DateTime get lastSeen => _lastSeen ?? DateTime.now();
+
   String? get name => _name;
 
   String get id => _id;
+
+  Position? get location => _currentPosition;
+
+  double? get battery => _battery ?? calculateBattery();
+
+  bool? get hasSentDatas => _hasSentDatas ?? false;
 
   /// 连接设备
   /// 返回设备对象
@@ -647,6 +717,76 @@ class ScanResult {
     }
     return device;
   }
+
+  @override
+  String toString() {
+    return 'ScanResult{_id: $_id, _name: $_name, _localName: $_localName, '
+        '_macAddress: $_macAddress, _rssi: $_rssi, _uuids: $_uuids, '
+        '_manufacturerSpecificData: $_manufacturerSpecificData, _row: $_row, '
+        '_lastSeen: $_lastSeen, _currentPosition: $_currentPosition, '
+        '_battery: $_battery, _hasSentDatas: $_hasSentDatas}';
+  }
+
+  Future<Position?> _getCurrentLocation() async {
+    try {
+      Position? _currentPosition = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      return _currentPosition;
+    } catch (e) {
+      print("Error getting location: $e");
+      return null;
+    }
+  }
+
+  double calculateBattery() {
+    if (_row == null) {
+      return 0.0;
+    }
+
+    String rowHex = _row!.map((byte) {
+      String byteStr = byte.toRadixString(16);
+      return byteStr.length > 1 ? byteStr : "0$byteStr";
+    }).join("");
+
+    String eirValueHex =
+        rowHex.substring(22, 24); // Get the value from position 22 to 24
+    if (eirValueHex == "22") {
+      String batteryHex = rowHex.substring(26, 28);
+
+      int? battery = int.parse(batteryHex, radix: 16).clamp(0, 100);
+      double batteryDouble = battery.toDouble();
+
+      return batteryDouble ?? 0123123.0;
+    } else {
+      String batteryHex = rowHex.substring(44, 48);
+      int? battery = int.parse(batteryHex, radix: 16);
+      double? batteryPercentage = calculateBatteryPercentage(battery);
+      return batteryPercentage ??
+          0.0; // Return the calculated battery percentage.
+    }
+  }
+
+  double calculateBatteryPercentage(int battery) {
+    double? percentage = 0;
+
+    if (battery >= 3000) {
+      percentage = 100;
+    } else if (battery >= 2900) {
+      percentage = 100 - ((3000 - battery) * 10) / 100;
+    } else if (battery > 2740) {
+      percentage = 90 - ((2900 - battery) * 20) / 160;
+    } else if (battery > 2440) {
+      percentage = 60 - ((2673 - battery) * 3) / 20;
+    } else if (battery > 2000) {
+      percentage = 25 - ((2440 - battery) * 20) / 340;
+    } else {
+      percentage = 0;
+    }
+
+    return percentage;
+  }
 }
 
 ///返回发现的蓝牙服务
@@ -662,7 +802,6 @@ class BleService {
   List<BleCharacteristic> get characteristics => _characteristics;
 
   String get serviceUuid => _serviceUuid; //特征值UUID
-
 }
 
 ///返回发现的蓝牙服务特征值
@@ -718,7 +857,6 @@ class DeviceSignalResult {
   String get uuid => _uuid;
 
   DeviceSignalType get type => _type; //写入返回的数据
-
 }
 
 ///标示android平台缺少哪些蓝牙必须功能的枚举类
@@ -827,3 +965,4 @@ enum DeviceSignalType {
   ///无法判断,因为ios平台下characteristicsRead和characteristicsNotify是一样的
   unKnown
 }
+
