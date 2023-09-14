@@ -178,12 +178,9 @@ class FlutterBlueElves {
               message['scanRecord'],
               DateTime.now(),
               currentLocation,
-              message['battery'],
-              message['hasSentDatas']);
-
+              message['battery']);
           item.lastSeen = DateTime.now();
           item.location = currentLocation;
-          item.hasSentDatas = false;
 
           _scanResultStreamController.add(item);
         }
@@ -640,8 +637,6 @@ class ScanResult {
 
   late double? _battery;
 
-  late bool? _hasSentDatas;
-
   ScanResult._(
       this._id,
       this._name,
@@ -653,8 +648,7 @@ class ScanResult {
       this._row,
       this._lastSeen,
       this._currentPosition,
-      this._battery,
-      this._hasSentDatas);
+      this._battery);
 
   set lastSeen(DateTime lastSeen) {
     _lastSeen = lastSeen;
@@ -666,10 +660,6 @@ class ScanResult {
 
   set battery(double? battery) {
     _battery = battery;
-  }
-
-  set hasSentDatas(bool? hasSentDatas) {
-    _hasSentDatas = hasSentDatas;
   }
 
   Uint8List? get row => _row;
@@ -694,8 +684,6 @@ class ScanResult {
 
   double? get battery => _battery ?? calculateBattery();
 
-  bool? get hasSentDatas => _hasSentDatas ?? false;
-
   /// 连接设备
   /// 返回设备对象
   Device connect({connectTimeout = 0}) {
@@ -716,15 +704,6 @@ class ScanResult {
       device.connect(connectTimeout: connectTimeout);
     }
     return device;
-  }
-
-  @override
-  String toString() {
-    return 'ScanResult{_id: $_id, _name: $_name, _localName: $_localName, '
-        '_macAddress: $_macAddress, _rssi: $_rssi, _uuids: $_uuids, '
-        '_manufacturerSpecificData: $_manufacturerSpecificData, _row: $_row, '
-        '_lastSeen: $_lastSeen, _currentPosition: $_currentPosition, '
-        '_battery: $_battery, _hasSentDatas: $_hasSentDatas}';
   }
 
   Future<Position?> _getCurrentLocation() async {
@@ -965,4 +944,3 @@ enum DeviceSignalType {
   ///无法判断,因为ios平台下characteristicsRead和characteristicsNotify是一样的
   unKnown
 }
-
