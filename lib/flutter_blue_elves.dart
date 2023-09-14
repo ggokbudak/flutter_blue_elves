@@ -168,19 +168,26 @@ class FlutterBlueElves {
         {
           Position? currentLocation = await _getCurrentLocation();
           ScanResult item = ScanResult._(
-              message['id'],
-              message['name'],
-              message['localName'],
-              message['macAddress'],
-              message['rssi'],
-              message['uuids'],
-              message['manufacturerSpecificData'],
-              message['scanRecord'],
-              DateTime.now(),
-              currentLocation,
-              message['battery']);
+            message['id'],
+            message['name'],
+            message['localName'],
+            message['macAddress'],
+            message['rssi'],
+            message['uuids'],
+            message['manufacturerSpecificData'],
+            message['scanRecord'],
+            DateTime.now(),
+            currentLocation,
+            message['battery'],
+            message['hasSentDatas'],
+            message['ivmeX'],
+            message['ivmeY'],
+            message['ivmeZ'],
+          );
+
           item.lastSeen = DateTime.now();
           item.location = currentLocation;
+          item.hasSentDatas = false;
 
           _scanResultStreamController.add(item);
         }
@@ -637,6 +644,12 @@ class ScanResult {
 
   late double? _battery;
 
+  late bool? _hasSentDatas;
+
+  late double? _ivmeX;
+  late double? _ivmeY;
+  late double? _ivmeZ;
+
   ScanResult._(
       this._id,
       this._name,
@@ -648,7 +661,11 @@ class ScanResult {
       this._row,
       this._lastSeen,
       this._currentPosition,
-      this._battery);
+      this._battery,
+      this._hasSentDatas,
+      this._ivmeX,
+      this._ivmeY,
+      this._ivmeZ);
 
   set lastSeen(DateTime lastSeen) {
     _lastSeen = lastSeen;
@@ -660,6 +677,22 @@ class ScanResult {
 
   set battery(double? battery) {
     _battery = battery;
+  }
+
+  set ivmeX(double? ivmeX) {
+    _ivmeX = ivmeX;
+  }
+
+  set ivmeY(double? ivmeY) {
+    _ivmeY = ivmeY;
+  }
+
+  set ivmeZ(double? ivmeZ) {
+    _ivmeZ = ivmeZ;
+  }
+
+  set hasSentDatas(bool? hasSentDatas) {
+    _hasSentDatas = hasSentDatas;
   }
 
   Uint8List? get row => _row;
@@ -684,6 +717,12 @@ class ScanResult {
 
   double? get battery => _battery ?? calculateBattery();
 
+  bool? get hasSentDatas => _hasSentDatas ?? false;
+
+  double? get ivmeX => _ivmeX ?? ivmeHesaplaX();
+  double? get ivmeY => _ivmeY ?? ivmeHesaplaY();
+  double? get ivmeZ => _ivmeZ ?? ivmeHesaplaZ();
+
   /// 连接设备
   /// 返回设备对象
   Device connect({connectTimeout = 0}) {
@@ -704,6 +743,105 @@ class ScanResult {
       device.connect(connectTimeout: connectTimeout);
     }
     return device;
+  }
+
+  @override
+  String toString() {
+    return 'ScanResult{_id: $_id, _name: $_name, _localName: $_localName, '
+        '_macAddress: $_macAddress, _rssi: $_rssi, _uuids: $_uuids, '
+        '_manufacturerSpecificData: $_manufacturerSpecificData, _row: $_row, '
+        '_lastSeen: $_lastSeen, _currentPosition: $_currentPosition, '
+        '_battery: $_battery, _hasSentDatas: $_hasSentDatas}';
+  }
+
+  double ivmeHesaplaX() {
+    if (_row == null) {
+      return 0.0;
+    }
+
+    String rowHex = _row!.map((byte) {
+      String byteStr = byte.toRadixString(16);
+      return byteStr.length > 1 ? byteStr : "0$byteStr";
+    }).join("");
+
+    String eirValueHex = rowHex.substring(22, 24);
+    if (eirValueHex == "22") {
+      return 0.0;
+    } else {
+      // 40 -- 44 Z ------- 36 -- 40 Y  ------------ 32 36 x
+      String XekseniHex =
+          rowHex.substring(32, 36); // Hexadecimal olarak yazılmış bir değer
+      int sayi = int.parse(XekseniHex,
+          radix: 16); // Hexadecimal değeri ondalık sayıya çevirme
+
+      int kaydirilmisSayi = sayi >> 4; // 4 bit sağa kaydırma işlemi
+      if (sayi < 32768) {
+        return kaydirilmisSayi.toDouble();
+      } else {
+        int kaydirilmisSayiNegatif = kaydirilmisSayi - 4096;
+        return kaydirilmisSayiNegatif.toDouble();
+      }
+    }
+  }
+
+  double ivmeHesaplaY() {
+    if (_row == null) {
+      return 0.0;
+    }
+
+    String rowHex = _row!.map((byte) {
+      String byteStr = byte.toRadixString(16);
+      return byteStr.length > 1 ? byteStr : "0$byteStr";
+    }).join("");
+
+    String eirValueHex = rowHex.substring(22, 24);
+    if (eirValueHex == "22") {
+      return 0.0;
+    } else {
+      // 40 -- 44 Z ------- 36 -- 40 Y  ------------ 32 36 x
+      String YekseniHex =
+          rowHex.substring(36, 40); // Hexadecimal olarak yazılmış bir değer
+      int sayi = int.parse(YekseniHex,
+          radix: 16); // Hexadecimal değeri ondalık sayıya çevirme
+
+      int kaydirilmisSayi = sayi >> 4; // 4 bit sağa kaydırma işlemi
+      if (sayi < 32768) {
+        return kaydirilmisSayi.toDouble();
+      } else {
+        int kaydirilmisSayiNegatif = kaydirilmisSayi - 4096;
+        return kaydirilmisSayiNegatif.toDouble();
+      }
+    }
+  }
+
+  double ivmeHesaplaZ() {
+    if (_row == null) {
+      return 0.0;
+    }
+
+    String rowHex = _row!.map((byte) {
+      String byteStr = byte.toRadixString(16);
+      return byteStr.length > 1 ? byteStr : "0$byteStr";
+    }).join("");
+
+    String eirValueHex = rowHex.substring(22, 24);
+    if (eirValueHex == "22") {
+      return 0.0;
+    } else {
+      // 40 -- 44 Z ------- 36 -- 40 Y  ------------ 32 36 x
+      String ZekseniHex =
+          rowHex.substring(40, 44); // Hexadecimal olarak yazılmış bir değer
+      int sayi = int.parse(ZekseniHex,
+          radix: 16); // Hexadecimal değeri ondalık sayıya çevirme
+
+      int kaydirilmisSayi = sayi >> 4; // 4 bit sağa kaydırma işlemi
+      if (sayi < 32768) {
+        return kaydirilmisSayi.toDouble();
+      } else {
+        int kaydirilmisSayiNegatif = kaydirilmisSayi - 4096;
+        return kaydirilmisSayiNegatif.toDouble();
+      }
+    }
   }
 
   Future<Position?> _getCurrentLocation() async {
